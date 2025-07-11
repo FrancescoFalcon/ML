@@ -1,0 +1,30 @@
+
+# Model Configuration for Balatro RL
+# ==================================
+
+network:
+  policy_type: "MlpPolicy"
+  net_arch:
+    - 512
+    - 256
+    - 128
+  activation_fn: "relu" # Options: relu, tanh, gelu
+  ortho_init: true
+  
+features:
+  normalize_obs: true
+  normalize_reward: true
+  clip_obs: 10.0
+  
+advanced:
+  use_sde: false # Use Stochastic Differential Equations for exploration
+  sde_sample_freq: -1
+  target_kl: null # If not null, clip the KL divergence between old and new policy
+
+reward_function: # These are illustrative for a more complex reward, not directly used by SB3 PPO
+  weights:
+    blind_completion: 1.0
+    ante_progression: 2.0
+    hand_score: 0.1
+    efficiency: 0.5 # Reward for fewer hands/discards
+    survival: 0.2

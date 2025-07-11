@@ -1,0 +1,49 @@
+
+# Training Configuration for Balatro RL
+# =====================================
+
+environment:
+  max_ante: 8
+  starting_money: 4
+  deck_size: 52 # Not directly used by env but for info
+  hand_size: 8 # Max cards in hand
+  max_jokers: 5 # Max jokers player can have
+
+training:
+  algorithm: "PPO"
+  total_timesteps: 500000
+  learning_rate: 3e-4
+  batch_size: 64
+  n_steps: 2048 # Number of steps to run for each environment per update
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  n_envs: 8 # Number of parallel environments
+
+evaluation:
+  eval_freq: 10000 # Evaluate every N timesteps
+  n_eval_episodes: 50
+  deterministic: true
+
+logging:
+  log_dir: "./data/logs/"
+  model_dir: "./data/models/"
+  use_wandb: true
+  wandb_project: "balatro-rl"
+  wandb_entity: null # Replace with your wandb entity if applicable
+  save_freq: 50000 # How often to save the model (for wandb)
+
+curriculum:
+  enabled: true
+  stages:
+    - max_ante: 2
+      timesteps: 100000
+    - max_ante: 4
+      timesteps: 150000
+    - max_ante: 6
+      timesteps: 200000
+    - max_ante: 8
+      timesteps: 250000
