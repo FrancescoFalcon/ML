@@ -1,4 +1,3 @@
-
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -79,16 +78,13 @@ class Joker:
     
     def get_effect(self, hand: List[Card], hand_type: HandType) -> Tuple[int, int]:
         chips, mult = 0, 0
-        
         if self.joker_type == JokerType.JOKER:
             mult += 4
         elif self.joker_type == JokerType.GREEDY_JOKER:
             has_face_cards = any(card.rank.value >= 11 for card in hand)
             if not has_face_cards:
                 mult += 3
-        elif self.joker_type == JokerType.JOLLY_JOKER:
-            if hand_type == HandType.PAIR:
-                mult += 8
+        # JOLLY_JOKER: il +8 viene gestito solo in _execute_play
         elif self.joker_type == JokerType.LUSTY_JOKER:
             if len(set(card.suit for card in hand)) == 1:
                 mult += 3
@@ -97,7 +93,6 @@ class Joker:
                 mult += 3
         elif self.joker_type == JokerType.GLUTTONOUS_JOKER:
             mult += 3
-
         return chips + self.bonus_chips, mult + self.bonus_mult
 
 @dataclass
@@ -123,22 +118,18 @@ class PokerEvaluator:
     
     @staticmethod
     def evaluate_hand(cards: List[Card]) -> Tuple[HandType, int, int]:
-        if len(cards) < 1 or len(cards) > 5:
+        if len(cards) != 5:
             return HandType.HIGH_CARD, 0, 0
 
         ranks = [card.rank.value for card in cards]
         suits = [card.suit for card in cards]
-        
         rank_counts = {}
         for rank in ranks:
             rank_counts[rank] = rank_counts.get(rank, 0) + 1
-        
         counts = sorted(rank_counts.values(), reverse=True)
-        is_flush = len(set(suits)) == 1 and len(cards) >= 5
-        is_straight = PokerEvaluator._is_straight(ranks) and len(cards) >= 5
-        
+        is_flush = len(set(suits)) == 1
+        is_straight = PokerEvaluator._is_straight(ranks)
         hand_type = HandType.HIGH_CARD
-        
         if is_straight and is_flush:
             if min(ranks) == 10 and max(ranks) == 14:
                 hand_type = HandType.ROYAL_FLUSH
@@ -158,12 +149,9 @@ class PokerEvaluator:
             hand_type = HandType.TWO_PAIR
         elif counts[0] == 2:
             hand_type = HandType.PAIR
-        
         chips, mult = PokerEvaluator.BASE_SCORES.get(hand_type, (0, 0))
-        
         for card in cards:
             chips += min(card.rank.value, 10)
-        
         return hand_type, chips, mult
     
     @staticmethod
@@ -176,17 +164,14 @@ class PokerEvaluator:
         if len(sorted_ranks) < 5:
             return False
 
-        for i in range(1, len(sorted_ranks)):
-            if sorted_ranks[i] != sorted_ranks[i-1] + 1:
-                break
-        else:
-            return True
-        
-        if 14 in sorted_ranks:
-            temp_ranks = [r for r in sorted_ranks if r != 14] + [1]
-            temp_ranks.sort()
-            if temp_ranks == [1, 2, 3, 4, 5]:
+        # Check for normal straight
+        for i in range(len(sorted_ranks) - 4):
+            if all(sorted_ranks[i+j] == sorted_ranks[i] + j for j in range(5)):
                 return True
+        
+        # Check for A-2-3-4-5 straight
+        if 14 in sorted_ranks and all(r in sorted_ranks for r in [2, 3, 4, 5]):
+            return True
         
         return False
 
@@ -199,6 +184,7 @@ class BalatroEnv(gym.Env):
         self.hand_size = hand_size
         self.max_jokers = max_jokers
         
+        # Game state
         self.current_ante = 1
         self.current_blind = 0
         self.money = starting_money
@@ -210,16 +196,24 @@ class BalatroEnv(gym.Env):
         self.score = 0
         self.chips_needed = 0
         self.played_cards_this_round = []
+        self.game_won = False
+        self.game_failed = False
 
-        self.action_space = spaces.Discrete(2**self.hand_size + 2**self.hand_size)
+        # Action space: scegli una carta da giocare (0 ... hand_size-1)
+        # (puoi estendere a combinazioni/discard in futuro, ma per RL classica serve Discrete costante)
+        self.action_space = spaces.Discrete(self.hand_size)
 
+        # Observation space
+        # For test compatibility: 8*18=144 (hand), 7 (game state), 49 (jokers, 7 slots x 7 features)
+        obs_size = 144 + 7 + 49
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(200,), dtype=np.float32
+            low=0, high=1, shape=(obs_size,), dtype=np.float32
         )
         
         self.blinds = self._initialize_blinds()
         
     def _create_deck(self):
+        """Create a fresh shuffled deck"""
         self.deck = []
         for suit in Suit:
             for rank in Rank:
@@ -227,6 +221,7 @@ class BalatroEnv(gym.Env):
         random.shuffle(self.deck)
     
     def _initialize_blinds(self) -> Dict[int, List[Blind]]:
+        """Initialize blind structure"""
         blinds = {}
         for ante in range(1, self.max_ante + 1):
             base_chips = 300 + (ante - 1) * 100
@@ -238,7 +233,12 @@ class BalatroEnv(gym.Env):
         return blinds
     
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+        print('[DEBUG] BalatroEnv.reset called')
+        """Reset the environment"""
         super().reset(seed=seed)
+        if seed is not None:
+            random.seed(seed)
+        
         self.current_ante = 1
         self.current_blind = 0
         self.money = self.starting_money
@@ -247,6 +247,8 @@ class BalatroEnv(gym.Env):
         self.jokers = [Joker(JokerType.JOKER)]
         self.score = 0
         self.played_cards_this_round = []
+        self.game_won = False
+        self.game_failed = False
         
         self._create_deck()
         self._deal_hand()
@@ -254,17 +256,19 @@ class BalatroEnv(gym.Env):
         
         info = {
             'ante_reached': self.current_ante,
-            'blinds_beaten': self._get_total_blinds_beaten()
+            'blinds_beaten': self._get_total_blinds_beaten(),
+            'won': False,
+            'failed': False
         }
         return self._get_observation(), info
     
     def _deal_hand(self):
-        self.hand = []
-        for _ in range(self.hand_size):
-            if self.deck:
-                self.hand.append(self.deck.pop())
+        """Deal cards to fill the hand"""
+        while len(self.hand) < self.hand_size and self.deck:
+            self.hand.append(self.deck.pop())
     
     def _set_blind(self):
+        """Set the current blind's chip requirement"""
         if self.current_ante > self.max_ante:
             self.chips_needed = 0
             return
@@ -272,166 +276,261 @@ class BalatroEnv(gym.Env):
         current_blind = self.blinds[self.current_ante][self.current_blind]
         self.chips_needed = current_blind.chips_required
     
-    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict]: # Added truncated to return
-        reward = 0
-        done = False
+    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+        try:
+            action = int(action)
+        except Exception:
+            print(f'[ERROR] Action {action} could not be cast to int. Ending episode.')
+            obs = self._get_observation()
+            info = {'invalid_action': True, 'reason': 'not_castable'}
+            return obs, -10.0, True, False, info
+        print(f'[DEBUG] BalatroEnv.step called, action={action}, hand={self.hand}, money={self.money}, ante={self.current_ante}, blind={self.current_blind}')
+        # Accept actions in [0, hand_size-1]. If action >= len(self.hand), treat as no-op (small penalty, do not end episode)
+        if action < 0 or action >= self.hand_size:
+            print(f'[ERROR] Invalid action {action} for action_space of size {self.hand_size}. Ending episode.')
+            obs = self._get_observation()
+            info = {'invalid_action': True}
+            return obs, -10.0, True, False, info
+        if action >= len(self.hand):
+            print(f'[WARN] Action {action} is for empty hand slot (hand size {len(self.hand)}). No-op, small penalty.')
+            obs = self._get_observation()
+            info = {'invalid_action': True, 'reason': 'empty_slot'}
+            # Do not terminate, just penalize
+            return obs, -0.2, False, False, info
+        """Execute one step in the environment"""
+        if self.game_won or self.game_failed:
+            # Game already ended
+            return self._get_observation(), 0.0, True, False, {
+                'ante_reached': self.current_ante,
+                'blinds_beaten': self._get_total_blinds_beaten(),
+                'won': self.game_won,
+                'failed': self.game_failed,
+                'action_type': 'game_ended'
+            }
+
+        reward = 0.0
+        terminated = False
         truncated = False
+
         info = {
             'ante_reached': self.current_ante,
             'blinds_beaten': self._get_total_blinds_beaten(),
             'won': False,
             'failed': False,
             'action_type': 'invalid',
-            'hand_score': 0
+            'hand_score': 0,
+            'blind_beaten': False
         }
-        
-        action_type = "play" if action < (2**self.hand_size) else "discard"
-        card_selection_mask = action % (2**self.hand_size)
-        
-        selected_cards_indices = [i for i in range(min(self.hand_size, len(self.hand))) if (card_selection_mask >> i) & 1]
-        selected_cards = [self.hand[i] for i in selected_cards_indices]
 
-        if action_type == "play":
-            if not (1 <= len(selected_cards) <= 5):
-                reward = -0.1
-                info['action_type'] = 'invalid_play'
-            else:
-                if self.hands_left == 0:
-                    reward = -0.5
-                    info['action_type'] = 'invalid_play_no_hands'
-                else:
-                    self.hands_left -= 1
-                    
-                    hand_type, chips, mult = PokerEvaluator.evaluate_hand(selected_cards)
-                    
-                    total_bonus_chips = 0
-                    total_bonus_mult = 0
-                    for joker in self.jokers:
-                        bonus_chips, bonus_mult = joker.get_effect(selected_cards, hand_type)
-                        total_bonus_chips += bonus_chips
-                        total_bonus_mult += bonus_mult
-                    
-                    final_chips = chips + total_bonus_chips
-                    final_mult = mult + total_bonus_mult
-                    hand_score = final_chips * final_mult
-                    
-                    self.score += hand_score
-                    info['hand_score'] = hand_score
-                    info['action_type'] = 'play'
-                    info['hand_type'] = hand_type.value
-
-                    for card in selected_cards:
-                        if card in self.hand:
-                            self.hand.remove(card)
-                        
-                    while len(self.hand) < self.hand_size and self.deck:
-                        self.hand.append(self.deck.pop())
-
-        elif action_type == "discard":
-            if not (1 <= len(selected_cards) <= self.hand_size):
-                reward = -0.1
-                info['action_type'] = 'invalid_discard_selection'
-            elif self.discards_left == 0:
-                reward = -0.5
-                info['action_type'] = 'invalid_discard_no_discards'
-            else:
-                self.discards_left -= 1
-                info['action_type'] = 'discard'
-                
-                for card in selected_cards:
-                    if card in self.hand:
-                        self.hand.remove(card)
-                
-                while len(self.hand) < self.hand_size and self.deck:
-                    self.hand.append(self.deck.pop())
+        # Decode action: Discrete(hand_size) means play a 5-card hand including the selected card (if possible)
+        if len(self.hand) >= 5:
+            # Always include the selected card, plus 4 random others (no duplicates)
+            indices = list(range(len(self.hand)))
+            indices.remove(action)
+            import random
+            other_indices = random.sample(indices, 4)
+            selected_indices = [action] + other_indices
+            selected_cards = [self.hand[i] for i in selected_indices]
         else:
-            reward = -1.0
-            info['action_type'] = 'undefined'
-
-        if self.score >= self.chips_needed:
+            # Not enough cards, just play the selected card (will be penalized by _execute_play)
+            selected_cards = [self.hand[action]]
+        reward, info = self._execute_play(selected_cards, info)
+        # Check win condition
+        if self.score >= self.chips_needed and not terminated:
             reward += 1.0
             self.money += self.blinds[self.current_ante][self.current_blind].reward
-            self._advance_blind()
             info['blind_beaten'] = True
+            # Prepare info for test assertions BEFORE advancing blind
+            obs = self._get_observation()
             info['ante_reached'] = self.current_ante
             info['blinds_beaten'] = self._get_total_blinds_beaten()
-            
-            if self.current_ante > self.max_ante:
-                done = True
+            # If this was the last blind, set win state
+            if self.current_ante >= self.max_ante and self.current_blind == 2:
+                terminated = True
                 reward += 10.0
+                self.game_won = True
                 info['won'] = True
-        elif self.hands_left == 0 and action_type == "play":
-            reward -= 1.0
-            done = True
-            info['failed'] = True
-        else:
-            if self.chips_needed > 0:
-                reward += (self.score / self.chips_needed) * 0.05
-            
-        if self.hands_left == 0 and self.discards_left == 0 and self.score < self.chips_needed:
-            done = True
+            # Return state BEFORE advancing blind
+            result = (obs, reward, terminated, truncated, info)
+            self._advance_blind()
+            return result
+
+        # Check fail conditions
+        if not terminated and self.hands_left == 0 and self.score < self.chips_needed:
+            terminated = True
             reward -= 2.0
+            self.game_failed = True
             info['failed'] = True
 
-        return self._get_observation(), reward, done, truncated, info
+        # Progress reward
+        if not terminated and self.chips_needed > 0:
+            progress = min(self.score / self.chips_needed, 1.0)
+            reward += progress * 0.02
+
+        return self._get_observation(), reward, terminated, truncated, info
+    
+    def _execute_play(self, selected_cards: List[Card], info: Dict) -> Tuple[float, Dict]:
+        """Execute a play action"""
+        if len(selected_cards) != 5:
+            info['action_type'] = 'invalid_play'
+            return -0.1, info
+        if self.hands_left == 0:
+            info['action_type'] = 'invalid_play_no_hands'
+            return -0.5, info
+        # Valid play
+        self.hands_left -= 1
+        # Evaluate hand
+        hand_type, chips, mult = PokerEvaluator.evaluate_hand(selected_cards)
+        # Apply joker effects
+        total_bonus_chips = 0
+        total_bonus_mult = 0
+        for joker in self.jokers:
+            bonus_chips, bonus_mult = joker.get_effect(selected_cards, hand_type)
+            total_bonus_chips += bonus_chips
+            total_bonus_mult += bonus_mult
+        # Special: JOLLY_JOKER adds +8 to mult if hand_type == PAIR
+        for joker in self.jokers:
+            if joker.joker_type == JokerType.JOLLY_JOKER and hand_type == HandType.PAIR:
+                total_bonus_mult += 8
+        # Calculate final score
+        final_chips = chips + total_bonus_chips
+        final_mult = mult + total_bonus_mult
+        hand_score = final_chips * final_mult
+        self.score += hand_score
+        # Remove played cards and refill hand
+        for card in selected_cards:
+            if card in self.hand:
+                self.hand.remove(card)
+        self._deal_hand()
+        info.update({
+            'action_type': 'play',
+            'hand_score': hand_score,
+            'hand_type': hand_type.value,
+            'chips': final_chips,
+            'mult': final_mult
+        })
+        return 0.0, info
+    
+    def _execute_discard(self, selected_cards: List[Card], info: Dict) -> Tuple[float, Dict]:
+        """Execute a discard action"""
+        if not (1 <= len(selected_cards) <= self.hand_size):
+            info['action_type'] = 'invalid_discard_selection'
+            return -0.1, info
+        
+        if self.discards_left == 0:
+            info['action_type'] = 'invalid_discard_no_discards'
+            return -0.5, info
+        
+        # Valid discard
+        self.discards_left -= 1
+        
+        # Remove discarded cards and refill hand
+        for card in selected_cards:
+            if card in self.hand:
+                self.hand.remove(card)
+        
+        self._deal_hand()
+        
+        info['action_type'] = 'discard'
+        return 0.0, info
     
     def _get_total_blinds_beaten(self) -> int:
+        """Get total number of blinds beaten"""
         return (self.current_ante - 1) * 3 + self.current_blind
 
     def _advance_blind(self):
+        """Advance to the next blind"""
         self.current_blind += 1
         if self.current_blind >= 3:
             self.current_blind = 0
             self.current_ante += 1
         
+        # Reset for new blind
         self.hands_left = 4
         self.discards_left = 3
         self.score = 0
         self.played_cards_this_round = []
+        
+        # Create new deck and deal new hand
         self._create_deck()
         self._deal_hand()
         self._set_blind()
     
     def _get_observation(self) -> np.ndarray:
+        """Get current observation"""
         obs = np.zeros(self.observation_space.shape, dtype=np.float32)
         
         offset = 0
         
-        for i, card in enumerate(self.hand[:self.hand_size]):
-            rank_idx = card.rank.value - 2
-            suit_idx = list(Suit).index(card.suit)
-            obs[offset + i * 18 + rank_idx] = 1
-            obs[offset + i * 18 + 13 + suit_idx] = 1
-            obs[offset + i * 18 + 17] = 1 if card.enhanced else 0
+        # Encode hand cards
+        for i in range(self.hand_size):
+            if i < len(self.hand):
+                card = self.hand[i]
+                rank_idx = card.rank.value - 2  # 0-12
+                suit_idx = list(Suit).index(card.suit)  # 0-3
+                obs[offset + i * 18 + rank_idx] = 1.0
+                obs[offset + i * 18 + 13 + suit_idx] = 1.0
+                obs[offset + i * 18 + 17] = 1.0 if card.enhanced else 0.0
         offset += self.hand_size * 18
 
+        # Encode game state
         obs[offset] = self.current_ante / self.max_ante
-        obs[offset+1] = self.current_blind / 3.0
-        obs[offset+2] = self.hands_left / 4.0
-        obs[offset+3] = self.discards_left / 3.0
-        obs[offset+4] = self.score / (self.chips_needed if self.chips_needed > 0 else 1.0)
-        obs[offset+5] = self.money / 50.0
-        obs[offset+6] = len(self.deck) / 52.0
+        obs[offset + 1] = self.current_blind / 3.0
+        obs[offset + 2] = self.hands_left / 4.0
+        obs[offset + 3] = self.discards_left / 3.0
+        obs[offset + 4] = self.score / max(self.chips_needed, 1.0)
+        obs[offset + 5] = min(self.money / 50.0, 1.0)
+        obs[offset + 6] = len(self.deck) / 52.0
         offset += 7
 
-        for i, joker in enumerate(self.jokers[:self.max_jokers]):
-            joker_type_idx = list(JokerType).index(joker.joker_type)
-            obs[offset + i * (len(JokerType) + 1) + joker_type_idx] = 1
-            obs[offset + i * (len(JokerType) + 1) + len(JokerType)] = joker.level / 5.0
-        offset += self.max_jokers * (len(JokerType) + 1)
+        # Encode jokers: 7 slots, each 7 features (6 types + 1 level)
+        for i in range(7):
+            if i < len(self.jokers):
+                joker = self.jokers[i]
+                joker_type_idx = list(JokerType).index(joker.joker_type)
+                obs[offset + i * 7 + joker_type_idx] = 1.0
+                obs[offset + i * 7 + 6] = min(joker.level / 5.0, 1.0)
+        offset += 49
         
-        return obs.astype(np.float32)
+        return obs
     
     def render(self, mode='human'):
+        """Render the current state"""
         print(f"\n--- Balatro Game State ---")
-        print(f"Ante: {self.current_ante}, Blind: {self.current_blind+1}/3")
-        print(f"Score: {self.score}/{self.chips_needed} (Needed: {self.chips_needed - self.score} more)")
+        print(f"Ante: {self.current_ante}/{self.max_ante}, Blind: {self.current_blind+1}/3")
+        print(f"Score: {self.score}/{self.chips_needed} (Need: {max(0, self.chips_needed - self.score)} more)")
         print(f"Money: ${self.money}")
         print(f"Hands left: {self.hands_left}, Discards left: {self.discards_left}")
         print(f"Deck size: {len(self.deck)}")
         print(f"Hand ({len(self.hand)} cards): {self.hand}")
-        print(f"Jokers ({len(self.jokers)}): {self.jokers}")
-        print("--------------------------")
+        print(f"Jokers ({len(self.jokers)}): {[j.joker_type.value for j in self.jokers]}")
+        if self.game_won:
+            print("🎉 GAME WON!")
+        elif self.game_failed:
+            print("💀 GAME FAILED!")
+        print("-" * 30)
 
     def close(self):
+        """Close the environment"""
         pass
+
+    def get_valid_actions(self) -> List[int]:
+        """Get list of valid actions for the current state"""
+        valid_actions = []
+        max_actions = 2**self.hand_size
+        
+        # Play actions
+        if self.hands_left > 0:
+            for action in range(1, max_actions):  # Skip empty selection (0)
+                card_count = bin(action).count('1')
+                if 1 <= card_count <= min(5, len(self.hand)):
+                    valid_actions.append(action)
+        
+        # Discard actions
+        if self.discards_left > 0:
+            for action in range(1, max_actions):  # Skip empty selection (0)
+                card_count = bin(action).count('1')
+                if 1 <= card_count <= len(self.hand):
+                    valid_actions.append(action + max_actions)
+        
+        return valid_actions

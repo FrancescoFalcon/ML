@@ -22,17 +22,19 @@ class BalatroCallback(BaseCallback):
                     reward = self.locals['rewards'][i]
 
                     self.episode_rewards.append(reward)
-                    self.episode_lengths.append(self.locals['env'].buf_timesteps[i])
+                    # SB3 non garantisce buf_timesteps, quindi salta episode_lengths o usa info se presente
+                    if 'episode_length' in info:
+                        self.episode_lengths.append(info['episode_length'])
 
                     if 'ante_reached' in info:
                         self.antes_reached.append(info['ante_reached'])
                     if 'blinds_beaten' in info:
                         self.blinds_beaten.append(info['blinds_beaten'])
-                    
+
                     if wandb.run is not None:
                         wandb.log({
                             'rollout/episode_reward': reward,
-                            'rollout/episode_length': self.locals['env'].buf_timesteps[i],
+                            # 'rollout/episode_length': info.get('episode_length', 0),
                             'balatro/antes_reached': info.get('ante_reached', 0),
                             'balatro/blinds_beaten': info.get('blinds_beaten', 0),
                             'global_step': self.num_timesteps
