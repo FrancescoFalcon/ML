@@ -5,15 +5,14 @@
 network:
   policy_type: "MlpPolicy"
   net_arch:
-    - 512
-    - 256
-    - 128
+    - 64   # RIDOTTA: Rete ultra-semplice per massima stabilità
+    - 64
   activation_fn: "relu" # Options: relu, tanh, gelu
   ortho_init: true
   
 features:
-  normalize_obs: true
-  normalize_reward: true
+  normalize_obs: false  # DISABILITATO: Causa instabilità value function
+  normalize_reward: false  # DISABILITATO: Le penalità devono rimanere crude
   clip_obs: 10.0
   
 advanced:

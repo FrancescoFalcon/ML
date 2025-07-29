@@ -121,22 +121,28 @@ class BalatroMetrics:
         self.scores_achieved = []
     
     def add_episode(self, reward: float, ante: int, blinds: int, 
-                   hand_types: List[str], jokers: List[str], score: int):
+                   hand_types: list, jokers: list, score: int, win: bool = None):
         self.episode_rewards.append(reward)
         self.antes_reached.append(ante)
         self.blinds_beaten.append(blinds)
         self.hand_types_played.extend(hand_types)
         self.jokers_active_per_episode.append(jokers)
         self.scores_achieved.append(score)
+        if not hasattr(self, 'wins'):
+            self.wins = []
+        if win is not None:
+            self.wins.append(win)
+        else:
+            # fallback: consider win if ante >= 8 (legacy behavior)
+            self.wins.append(ante >= 8)
     
-    def get_statistics(self) -> Dict:
+    def get_statistics(self) -> dict:
         if not self.episode_rewards:
             return {}
-        
         all_jokers_flat = [joker for sublist in self.jokers_active_per_episode for joker in sublist]
-
+        win_rate = np.mean(self.wins) if hasattr(self, 'wins') and len(self.wins) == len(self.episode_rewards) else np.mean([1 if ante >= 8 else 0 for ante in self.antes_reached])
         return {
-            'win_rate': np.mean([1 if ante >= 8 else 0 for ante in self.antes_reached]),
+            'win_rate': win_rate,
             'avg_reward': np.mean(self.episode_rewards),
             'avg_ante': np.mean(self.antes_reached),
             'avg_blinds': np.mean(self.blinds_beaten),

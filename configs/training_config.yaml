@@ -3,7 +3,7 @@
 # =====================================
 
 environment:
-  max_ante: 8
+  max_ante: 8  # Training diretto ad ante 8 per strategia avanzata
   starting_money: 4
   deck_size: 52 # Not directly used by env but for info
   hand_size: 8 # Max cards in hand
@@ -11,21 +11,23 @@ environment:
 
 training:
   algorithm: "PPO"
-  total_timesteps: 500000
-  learning_rate: 3e-4
-  batch_size: 64
-  n_steps: 2048 # Number of steps to run for each environment per update
+  total_timesteps: 25000  # Dimezzato da 50000 a 25000
+  learning_rate: 0.00008
+  batch_size: 256  # Ridotto per velocizzare
+  n_steps: 1024 # Ridotto per feedback più frequente
   gamma: 0.99
   gae_lambda: 0.95
   clip_range: 0.2
-  ent_coef: 0.01
+  ent_coef: 0.05
   vf_coef: 0.5
   max_grad_norm: 0.5
-  n_envs: 8 # Number of parallel environments
+  n_envs: 4 # Ridotto per test veloce
+  device: "cpu" # CPU per test veloce
+  num_cpu_workers: 8
 
 evaluation:
-  eval_freq: 10000 # Evaluate every N timesteps
-  n_eval_episodes: 50
+  eval_freq: 5000 # Dimezzato da 10000 a 5000 - Evaluate every N timesteps
+  n_eval_episodes: 25 # Ridotto per velocizzare
   deterministic: true
 
 logging:
@@ -34,16 +36,17 @@ logging:
   use_wandb: true
   wandb_project: "balatro-rl"
   wandb_entity: null # Replace with your wandb entity if applicable
-  save_freq: 50000 # How often to save the model (for wandb)
+  save_freq: 25000 # Dimezzato da 50000 a 25000 - How often to save the model (for wandb)
 
 curriculum:
-  enabled: true
+  enabled: true  # Riabilitato per test completo del curriculum
   stages:
     - max_ante: 2
-      timesteps: 100000
+      timesteps: 25000  # Dimezzato da 50000 a 25000
+    - max_ante: 3
+      timesteps: 25000  # Dimezzato da 50000 a 25000
     - max_ante: 4
-      timesteps: 150000
-    - max_ante: 6
-      timesteps: 200000
-    - max_ante: 8
-      timesteps: 250000
+      timesteps: 25000  # Dimezzato da 50000 a 25000
+    - max_ante: 5
+      timesteps: 25000  # Dimezzato da 50000 a 25000
+  n_eval_episodes: 10  # Ridotto per velocizzare

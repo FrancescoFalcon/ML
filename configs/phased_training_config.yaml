@@ -1,0 +1,69 @@
+training:
+  n_envs: 8
+  algorithm: PPO
+  total_timesteps: 2000000  # Distributed across 5 phases
+  learning_rate: 0.0003
+  batch_size: 64
+  n_steps: 2048
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  device: 'cuda'
+
+environment:
+  max_ante: 8
+  starting_money: 4
+  hand_size: 8
+  max_jokers: 5
+
+evaluation:
+  eval_freq: 25000
+  n_eval_episodes: 20
+  deterministic: true
+
+logging:
+  log_dir: './data/logs/'
+  model_dir: './data/models/'
+  use_wandb: false
+  wandb_project: 'balatro-rl'
+  wandb_entity: null
+  save_freq: 50000
+
+# NEW: Phased training configuration
+phased_training:
+  enabled: true
+  total_duration_minutes: 30
+  num_phases: 5
+  phases:
+    - name: "Phase 1 - Initial Learning"
+      duration_minutes: 6
+      timesteps_per_minute: 8000  # Approximately 80k timesteps in 10 minutes
+      max_ante: 2
+      evaluation_episodes: 25
+    - name: "Phase 2 - Basic Strategy"
+      duration_minutes: 6
+      timesteps_per_minute: 8000
+      max_ante: 3
+      evaluation_episodes: 25
+    - name: "Phase 3 - Intermediate Skills"
+      duration_minutes: 6
+      timesteps_per_minute: 8000
+      max_ante: 4
+      evaluation_episodes: 25
+    - name: "Phase 4 - Advanced Tactics"
+      duration_minutes: 6
+      timesteps_per_minute: 8000
+      max_ante: 6
+      evaluation_episodes: 25
+    - name: "Phase 5 - Master Level"
+      duration_minutes: 6
+      timesteps_per_minute: 8000
+      max_ante: 8
+      evaluation_episodes: 25
+
+curriculum:
+  enabled: false
+  stages: []
