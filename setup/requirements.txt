@@ -1,0 +1,46 @@
+# Balatro RL Project Dependencies
+# =====================================
+# Installazione: pip install -r requirements.txt
+
+# Core ML e RL Libraries
+numpy>=1.21.0
+gymnasium>=0.29.0
+stable-baselines3>=2.0.0
+torch>=1.13.0
+
+# Ambiente di visualizzazione e grafici
+matplotlib>=3.5.0
+seaborn>=0.11.0
+pandas>=1.4.0
+
+# Logging e monitoraggio
+wandb>=0.13.0
+tensorboard>=2.10.0
+
+# Utilità di configurazione
+PyYAML>=6.0
+pyyaml>=6.0
+
+# Librerie standard Python (solitamente incluse, ma specificate per chiarezza)
+# typing_extensions>=4.0.0  # Solo se Python < 3.8
+
+# Dipendenze opzionali per testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Dipendenze per analisi dati
+scipy>=1.8.0
+scikit-learn>=1.1.0
+
+# Per compatibilità e stabilità
+setuptools>=60.0.0
+wheel>=0.37.0
+pip>=22.0.0
+
+# Note:
+# - gymnasium sostituisce gym (deprecated)
+# - stable-baselines3 richiede torch
+# - wandb per logging online (opzionale)
+# - PyYAML per file di configurazione YAML
+# - matplotlib e seaborn per grafici
+# - pandas per analisi dati nei plot
