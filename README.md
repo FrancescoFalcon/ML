@@ -60,11 +60,27 @@ ML/
 - **Visualizzazioni**: Grafici su progressione ante, distribuzione mani, acquisti joker, durata episodi
 - **Monitoraggio**: Supporto per Weights & Biases (wandb) e Tensorboard
 
-## 📊 Output & Analisi
-- **Grafici**: `data/plots/` (progressione ante, reward, distribuzione mani)
-- **Statistiche**: `data/results/training_statistics.txt`
-- **Modelli**: `data/models/` (checkpoint e best model)
-- **Log**: `data/logs/` (monitor.csv per ogni stage)
+
+## � Risultati Attesi
+
+Dopo un training standard (~25.000 timesteps, CPU), l'agente tipicamente raggiunge:
+- **Ante 2**: ~10.000 timesteps
+- **Ante 3**: ~20.000 timesteps
+- **Ante 4+**: solo con configurazioni ottimali
+
+Il reward medio cresce progressivamente, la distribuzione delle mani si stabilizza e l'acquisto dei joker diventa più strategico.
+
+Esempio di grafico generato:
+
+<p align="center">
+  <img src="data/plots/detailed_training_analysis_20250729_122002.png" alt="Esempio andamento training" width="700"/>
+</p>
+
+---
+**Grafici**: `data/plots/` (progressione ante, reward, distribuzione mani)
+**Statistiche**: `data/results/training_statistics.txt`
+**Modelli**: `data/models/` (checkpoint e best model)
+**Log**: `data/logs/` (monitor.csv per ogni stage)
 
 ## 🧪 Testing
 - Test automatici in `tests/` (Pytest)
